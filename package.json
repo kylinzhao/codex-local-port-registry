@@ -1,0 +1,26 @@
+{
+  "name": "codex-local-port-registry",
+  "version": "0.1.0",
+  "description": "Install the Codex local port registry skill into ~/.codex/skills via npx",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "codex-local-port-registry": "./bin/codex-local-port-registry.js"
+  },
+  "files": [
+    "README.md",
+    "bin",
+    "lib",
+    "skills"
+  ],
+  "keywords": [
+    "codex",
+    "skill",
+    "ports",
+    "localhost",
+    "npx"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

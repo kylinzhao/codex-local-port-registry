@@ -5,12 +5,16 @@ Codex skill for reserving, auditing, and repairing local dev ports before starti
 ## Install
 
 ```bash
-python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo kylinzhao/codex-local-port-registry \
-  --path skills/local-port-registry
+npx github:kylinzhao/codex-local-port-registry
 ```
 
 Restart Codex after installing.
+
+To overwrite an existing install:
+
+```bash
+npx github:kylinzhao/codex-local-port-registry -- --force
+```
 
 ## Optional
 
