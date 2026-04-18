@@ -2,8 +2,20 @@
   "name": "codex-local-port-registry",
   "version": "0.1.0",
   "description": "Install the Codex local port registry skill into ~/.codex/skills via npx",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kylinzhao/codex-local-port-registry.git"
+  },
+  "homepage": "https://github.com/kylinzhao/codex-local-port-registry#readme",
+  "bugs": {
+    "url": "https://github.com/kylinzhao/codex-local-port-registry/issues"
+  },
   "license": "MIT",
   "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "bin": {
     "codex-local-port-registry": "./bin/codex-local-port-registry.js"
   },

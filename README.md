@@ -2,6 +2,8 @@
 
 这是一个给 Codex 用的本地 skill，用来解决“多个项目同时开发时反复抢 `3000` / `3001` / `5173` / `10086` 等默认端口”的问题。
 
+[GitHub](https://github.com/kylinzhao/codex-local-port-registry) | 当前可用安装命令：`npx github:kylinzhao/codex-local-port-registry`
+
 典型场景：
 
 - 你有很多前端、后端、Vite、Next.js、Docker Compose 项目
@@ -16,6 +18,15 @@
 3. 如果冲突，生成一段可以直接发给用户的确认提示
 4. 只有用户明确同意后，才改 `.env`、`package.json` 或 `docker-compose.yml`
 5. 把新的端口结果写回本地 registry，避免以后继续乱抢
+
+## 一句话理解
+
+它相当于给 Codex 加了一个“启动服务前的端口门卫”：
+
+- 启动前先检查
+- 冲突时先提醒
+- 只有你点头才修改配置
+- 修改后把结果登记下来
 
 ## 这个库到底解决什么问题
 
@@ -66,6 +77,16 @@ npx github:kylinzhao/codex-local-port-registry
 npx github:kylinzhao/codex-local-port-registry -- --force
 ```
 
+## npm 包状态
+
+这个仓库已经补齐了 npm 包装层和 `package.json`，并且 `npm pack --dry-run` 已通过。
+
+等 npm 账号登录有效后，就可以正式发布到 npm，发布后安装命令会变成：
+
+```bash
+npx codex-local-port-registry
+```
+
 ## 它安装了什么
 
 安装器会把 skill 拷贝到：
@@ -92,6 +113,24 @@ npx github:kylinzhao/codex-local-port-registry -- --force
 - 会给出“建议新端口”
 - 不会直接改
 
+## 它的工作方式
+
+这套 skill 会优先检查这些位置里的端口声明：
+
+- `.env`
+- `.env.local`
+- `.env.development`
+- `package.json` 的 `dev` / `preview` 脚本
+- `docker-compose.yml` / `docker-compose.yaml`
+
+然后把结果写进本地 registry：
+
+```bash
+~/.codex/memories/local-port-registry.json
+```
+
+之后再次启动其他项目时，AI 会优先参考这份 registry，而不是每次都从头猜。
+
 ## 它什么时候会改配置
 
 只有在用户明确同意之后，AI 才应该执行修复命令。
@@ -105,6 +144,23 @@ npx github:kylinzhao/codex-local-port-registry -- --force
 - `docker-compose.yml` 或 `docker-compose.yaml`
 
 默认不会改文档，不会静默重写项目配置。
+
+## before / after
+
+没有这个 skill 时：
+
+- AI 直接运行 `npm run dev`
+- 端口占用报错
+- 临时改端口
+- 下次又忘
+
+用了这个 skill 后：
+
+- AI 先执行端口预检
+- 发现冲突后直接告诉你“和哪些项目冲突”
+- 给出建议新端口
+- 你确认后再改配置
+- 新端口会被记住
 
 ## 推荐接入方式
 
