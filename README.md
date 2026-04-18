@@ -2,7 +2,7 @@
 
 这是一个给 Codex 用的本地 skill，用来解决“多个项目同时开发时反复抢 `3000` / `3001` / `5173` / `10086` 等默认端口”的问题。
 
-[GitHub](https://github.com/kylinzhao/codex-local-port-registry) | 当前可用安装命令：`npx github:kylinzhao/codex-local-port-registry`
+[GitHub](https://github.com/kylinzhao/codex-local-port-registry) | npm 安装命令：`npx codex-local-port-registry`
 
 典型场景：
 
@@ -66,7 +66,7 @@
 ## 安装
 
 ```bash
-npx github:kylinzhao/codex-local-port-registry
+npx codex-local-port-registry
 ```
 
 安装完成后重启 Codex。
@@ -74,17 +74,17 @@ npx github:kylinzhao/codex-local-port-registry
 如果你想覆盖已有安装：
 
 ```bash
-npx github:kylinzhao/codex-local-port-registry -- --force
+npx codex-local-port-registry -- --force
 ```
 
 ## npm 包状态
 
-这个仓库已经补齐了 npm 包装层和 `package.json`，并且 `npm pack --dry-run` 已通过。
+这个仓库已经发布到 npm 后即可直接通过上面的命令安装。
 
-等 npm 账号登录有效后，就可以正式发布到 npm，发布后安装命令会变成：
+如果你不想走 npm，也可以直接使用 GitHub 版本：
 
 ```bash
-npx codex-local-port-registry
+npx github:kylinzhao/codex-local-port-registry
 ```
 
 ## 它安装了什么
