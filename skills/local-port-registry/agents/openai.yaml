@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Port Registry"
+  short_description: "Reserve and repair local dev ports"
+  default_prompt: "Check local dev port conflicts before launch, show the user a ready-to-send conflict prompt when needed, and only repair project config after explicit approval."
