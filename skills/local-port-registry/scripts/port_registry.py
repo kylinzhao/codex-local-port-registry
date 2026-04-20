@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import socket
 import sys
 from pathlib import Path
@@ -305,6 +306,65 @@ def parse_package_script_ports(package: dict[str, Any], package_path: Path) -> l
     return matches
 
 
+def requested_script_name(command: str | None) -> str | None:
+    if not command:
+        return None
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    if len(tokens) < 2:
+        return None
+
+    tool = tokens[0]
+    action = tokens[1]
+
+    if tool == "npm":
+        if action == "run" and len(tokens) >= 3:
+            return tokens[2]
+        if action in {"start", "stop", "restart", "test"}:
+            return action
+        return None
+    if tool == "pnpm":
+        if action == "run" and len(tokens) >= 3:
+            return tokens[2]
+        if not action.startswith("-") and action not in {"exec", "dlx"}:
+            return action
+        return None
+    if tool == "yarn":
+        if action == "run" and len(tokens) >= 3:
+            return tokens[2]
+        if not action.startswith("-"):
+            return action
+        return None
+    if tool == "bun":
+        if action == "run" and len(tokens) >= 3:
+            return tokens[2]
+        if not action.startswith("-"):
+            return action
+    return None
+
+
+def relevant_detections(detections: list[dict[str, Any]], command: str | None) -> list[dict[str, Any]]:
+    requested_script = requested_script_name(command)
+    if not requested_script:
+        return detections
+
+    script_matches = [
+        item
+        for item in detections
+        if item["kind"] == "package-script" and item.get("script") == requested_script
+    ]
+    if script_matches:
+        return script_matches
+
+    env_matches = [item for item in detections if item["kind"] == "env-file"]
+    if env_matches:
+        return env_matches
+
+    return detections
+
+
 def detect_compose_services(project_root: Path) -> list[dict[str, Any]]:
     compose_path = None
     for name in ("docker-compose.yml", "docker-compose.yaml"):
@@ -409,7 +469,7 @@ def detect_compose_services(project_root: Path) -> list[dict[str, Any]]:
     return services
 
 
-def detect_service(project_root: Path, service_name: str | None = None) -> dict[str, Any]:
+def detect_service(project_root: Path, service_name: str | None = None, command: str | None = None) -> dict[str, Any]:
     package = load_package_json(project_root)
     framework = infer_framework(project_root, package)
     service_name = service_name or infer_service_name(project_root)
@@ -425,11 +485,13 @@ def detect_service(project_root: Path, service_name: str | None = None) -> dict[
     patch_target: dict[str, Any] | None = None
     detected_sources: list[str] = []
 
-    if detections:
-        current_port = detections[0]["port"]
-        detected_sources = [item["source"] for item in detections]
-        for item in detections:
-            if item.get("env_var"):
+    active_detections = relevant_detections(detections, command)
+
+    if active_detections:
+        current_port = active_detections[0]["port"]
+        detected_sources = [item["source"] for item in active_detections]
+        for item in active_detections:
+            if item["kind"] == "env-file" and item.get("env_var"):
                 preferred_env_var = item["env_var"]
                 patch_target = {
                     "type": "env-file",
@@ -438,7 +500,9 @@ def detect_service(project_root: Path, service_name: str | None = None) -> dict[
                 }
                 break
         if patch_target is None:
-            for item in detections:
+            for item in active_detections:
+                if item.get("env_var") and preferred_env_var is None:
+                    preferred_env_var = item["env_var"]
                 if item["kind"] == "package-script":
                     patch_target = {
                         "type": "package-script",
@@ -474,7 +538,7 @@ def detect_service(project_root: Path, service_name: str | None = None) -> dict[
         "service_name": service_name,
         "framework": framework,
         "current_port": current_port,
-        "detected_ports": sorted({item["port"] for item in detections}) if detections else [current_port],
+        "detected_ports": sorted({item["port"] for item in active_detections}) if active_detections else [current_port],
         "detected_sources": detected_sources,
         "detected_env_var": preferred_env_var,
         "preferred_env_var": preferred_env_var,
@@ -678,6 +742,8 @@ def detect_conflicts(services: list[dict[str, Any]]) -> dict[int, list[dict[str,
 
 
 def update_env_file(path: Path, env_var: str, port: int) -> None:
+    if path.name == "package.json":
+        raise RuntimeError("Refusing to write env vars into package.json")
     ensure_parent(path)
     if path.exists():
         lines = read_text(path).splitlines()
@@ -939,8 +1005,10 @@ def prompt_payload(service: dict[str, Any], registry: dict[str, Any], command: s
     ]
     if service["service_name"] != Path(service["project_root"]).name:
         apply_command.extend(["--service", service["service_name"]])
+    if command:
+        apply_command.extend(["--command", command])
     apply_command.append("--apply")
-    payload["apply_command"] = " ".join(apply_command)
+    payload["apply_command"] = shlex.join(apply_command)
 
     if service["needs_repair"]:
         labels = [item["display_label"] for item in conflict_items]
@@ -1005,21 +1073,21 @@ def handle_scan_root(args: argparse.Namespace) -> int:
     return 0
 
 
-def resolve_service_for_project(project: Path, service_name: str | None) -> dict[str, Any]:
+def resolve_service_for_project(project: Path, service_name: str | None, command: str | None = None) -> dict[str, Any]:
     project_root = find_project_root(project)
     if service_name and service_name.startswith("compose:"):
         for service in detect_compose_services(project_root):
             if service["service_name"] == service_name:
                 return service
         raise RuntimeError(f"Compose service not found: {service_name}")
-    return detect_service(project_root, service_name)
+    return detect_service(project_root, service_name, command)
 
 
 def handle_reserve(args: argparse.Namespace) -> int:
     project = Path(args.project).expanduser()
     with RegistryLock():
         registry = load_registry_unlocked()
-        service = resolve_service_for_project(project, args.service)
+        service = resolve_service_for_project(project, args.service, args.command)
         service = enrich_with_registry(service, registry)
         registry = upsert_registry_entries(registry, [service])
         save_registry_unlocked(registry)
@@ -1041,7 +1109,7 @@ def handle_repair_project(args: argparse.Namespace) -> int:
     project = Path(args.project).expanduser()
     with RegistryLock():
         registry = load_registry_unlocked()
-        service = resolve_service_for_project(project, args.service)
+        service = resolve_service_for_project(project, args.service, args.command)
         service = enrich_with_registry(service, registry)
         registry = upsert_registry_entries(registry, [service])
         if args.apply and service["needs_repair"]:
@@ -1120,7 +1188,7 @@ def handle_prompt(args: argparse.Namespace) -> int:
     project = Path(args.project).expanduser()
     with RegistryLock():
         registry = load_registry_unlocked()
-        service = resolve_service_for_project(project, args.service)
+        service = resolve_service_for_project(project, args.service, args.command)
         service = enrich_with_registry(service, registry)
         registry = upsert_registry_entries(registry, [service])
         save_registry_unlocked(registry)
