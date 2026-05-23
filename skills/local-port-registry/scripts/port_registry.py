@@ -150,6 +150,72 @@ def entry_key(project_root: str, service_name: str) -> str:
     return f"{project_root}::{service_name}"
 
 
+def normalize_service_name(service_name: str) -> str:
+    return service_name.split(":", 1)[-1]
+
+
+def discover_git_dir(start: Path) -> Path | None:
+    current = start.resolve()
+    if current.is_file():
+        current = current.parent
+    while True:
+        dot_git = current / ".git"
+        if dot_git.exists():
+            return dot_git
+        if current.parent == current:
+            return None
+        current = current.parent
+
+
+def git_common_dir(path: Path) -> Path | None:
+    dot_git = discover_git_dir(path)
+    if dot_git is None:
+        return None
+    if dot_git.is_dir():
+        return dot_git.resolve()
+    try:
+        content = dot_git.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not content.startswith("gitdir:"):
+        return None
+    gitdir_raw = content.split(":", 1)[1].strip()
+    gitdir = Path(gitdir_raw)
+    if not gitdir.is_absolute():
+        gitdir = (dot_git.parent / gitdir).resolve()
+    commondir_file = gitdir / "commondir"
+    if commondir_file.exists():
+        try:
+            common_raw = commondir_file.read_text(encoding="utf-8").strip()
+            common = Path(common_raw)
+            if not common.is_absolute():
+                common = (gitdir / common).resolve()
+            return common
+        except OSError:
+            return gitdir
+    return gitdir
+
+
+def is_self_reference_conflict(service: dict[str, Any], conflict_project_root: str, conflict_service_name: str) -> bool:
+    current_service = normalize_service_name(service["service_name"])
+    other_service = normalize_service_name(conflict_service_name)
+    if current_service != other_service:
+        return False
+
+    current_root = Path(service["project_root"]).resolve()
+    other_root = Path(conflict_project_root).resolve()
+    if (
+        current_root == other_root
+        or str(current_root).startswith(str(other_root) + os.sep)
+        or str(other_root).startswith(str(current_root) + os.sep)
+    ):
+        return True
+
+    current_git_common = git_common_dir(current_root)
+    other_git_common = git_common_dir(other_root)
+    return current_git_common is not None and other_git_common is not None and current_git_common == other_git_common
+
+
 def hash_base(project_root: str, service_name: str) -> int:
     digest = hashlib.sha1(entry_key(project_root, service_name).encode("utf-8")).hexdigest()
     span = MAX_PORT - MIN_PORT + 1
@@ -603,6 +669,8 @@ def conflict_keys_from_registry(service: dict[str, Any], registry: dict[str, Any
     for entry in registry.get("entries", []):
         if entry["key"] == key:
             continue
+        if is_self_reference_conflict(service, entry["project_root"], entry["service_name"]):
+            continue
         if entry.get("current_port") == current_port:
             keys.append(entry["key"])
     return sorted(keys)
@@ -711,7 +779,12 @@ def annotate_services_for_scan(services: list[dict[str, Any]], registry: dict[st
         for service in sorted_group:
             enriched = copy.deepcopy(service)
             key = entry_key(service["project_root"], service["service_name"])
-            peers = [entry_key(item["project_root"], item["service_name"]) for item in sorted_group if item is not service]
+            peers = [
+                entry_key(item["project_root"], item["service_name"])
+                for item in sorted_group
+                if item is not service
+                and not is_self_reference_conflict(service, item["project_root"], item["service_name"])
+            ]
             registry_peers = [item for item in conflict_keys_from_registry(service, registry) if item not in peers]
             conflicts = sorted(peers + registry_peers)
             enriched["conflicts_with"] = conflicts
@@ -920,10 +993,6 @@ def parse_entry_key(key: str) -> tuple[str, str]:
     return project_root, service_name
 
 
-def normalize_service_name(service_name: str) -> str:
-    return service_name.split(":", 1)[-1]
-
-
 def compact_project_label(project_root: str, service_name: str) -> str:
     path = Path(project_root)
     workspace_root = workspace_root_for(path)
@@ -939,21 +1008,6 @@ def compact_project_label(project_root: str, service_name: str) -> str:
     if normalize_service_name(service_name) != path.name:
         return f"{label}#{normalize_service_name(service_name)}"
     return label
-
-
-def is_self_reference_conflict(service: dict[str, Any], conflict_project_root: str, conflict_service_name: str) -> bool:
-    current_root = Path(service["project_root"]).resolve()
-    other_root = Path(conflict_project_root).resolve()
-    current_service = normalize_service_name(service["service_name"])
-    other_service = normalize_service_name(conflict_service_name)
-    if current_service != other_service:
-        return False
-    return (
-        current_root == other_root
-        or str(current_root).startswith(str(other_root) + os.sep)
-        or str(other_root).startswith(str(current_root) + os.sep)
-    )
-
 
 def conflict_details(conflict_keys: list[str], registry: dict[str, Any]) -> list[dict[str, Any]]:
     indexed = index_entries(registry)

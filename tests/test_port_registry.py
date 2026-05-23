@@ -19,6 +19,51 @@ SPEC.loader.exec_module(PORT_REGISTRY)
 
 
 class PortRegistryTests(unittest.TestCase):
+    def test_same_repo_worktree_conflict_is_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            main_repo = base / "repo-main"
+            worktree_repo = base / "repo-worktree"
+            main_repo.mkdir()
+            worktree_repo.mkdir()
+
+            (main_repo / ".git").mkdir()
+            worktree_gitdir = main_repo / ".git" / "worktrees" / "feature-a"
+            worktree_gitdir.mkdir(parents=True)
+            (worktree_gitdir / "commondir").write_text("../..\n", encoding="utf-8")
+            (worktree_repo / ".git").write_text(f"gitdir: {worktree_gitdir}\n", encoding="utf-8")
+
+            registry = {
+                "version": 1,
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "entries": [
+                    {
+                        "key": f"{main_repo}::web",
+                        "project_root": str(main_repo),
+                        "service_name": "web",
+                        "framework": "next",
+                        "current_port": 3000,
+                        "assigned_port": 3000,
+                    }
+                ],
+            }
+            service = {
+                "project_root": str(worktree_repo),
+                "service_name": "web",
+                "framework": "next",
+                "current_port": 3000,
+                "detected_ports": [3000],
+                "detected_sources": [],
+                "detected_env_var": "PORT",
+                "preferred_env_var": "PORT",
+                "suggested_patch": None,
+            }
+
+            enriched = PORT_REGISTRY.enrich_with_registry(service, registry)
+            self.assertFalse(enriched["needs_repair"])
+            self.assertEqual(enriched["assigned_port"], 3000)
+            self.assertEqual(enriched["conflicts_with"], [])
+
     def test_detect_service_prefers_requested_script_port(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             project_root = Path(tmp_dir)
